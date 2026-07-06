@@ -1,0 +1,14 @@
+{
+  "name": "Texas A&M Football Performance Dashboard",
+  "short_name": "A&M Performance",
+  "description": "Athlete readiness, GPS load, force plate, Perch, NordBord, and hydration monitoring.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#3c010f",
+  "theme_color": "#500000",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
