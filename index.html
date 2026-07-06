@@ -866,15 +866,39 @@ function loadFile(file){
       if(!data.roster.length){ setStatus(`⚠ No Name Database tab found in ${file.name} — check the tab name and headers.`); return; }
       DATA=data; focusAthlete=null;
       document.getElementById("demoBanner").style.display="none";
+      saveState({data,name:file.name,when:Date.now()});
       setStatus(errors.length?
         `Loaded ${file.name} — ${count} rows. Missing or empty tabs: ${errors.join(", ")}`:
-        `Loaded ${file.name} — ${count} rows across 5 systems ✓`);
+        `Loaded ${file.name} — ${count} rows across 5 systems ✓ (remembered on this device)`);
       render();
     }catch(err){ setStatus(`⚠ Couldn't read ${file.name}: ${err.message}`); }
   };
   reader.readAsArrayBuffer(file);
 }
 const setStatus=t=>document.getElementById("fileStatus").textContent=t;
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---- device memory: the last imported file is stored on this device (IndexedDB)
+        and restored automatically on the next launch. No data leaves the device. ---- */
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open("tamu-perf",1);
+  r.onupgradeneeded=()=>r.result.createObjectStore("state");
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);});}
+async function saveState(obj){try{const db=await idb();
+  db.transaction("state","readwrite").objectStore("state").put(obj,"last");}catch(e){}}
+async function loadState(){try{const db=await idb();
+  return await new Promise(res=>{const q=db.transaction("state").objectStore("state").get("last");
+    q.onsuccess=()=>res(q.result||null); q.onerror=()=>res(null);});}catch(e){return null}}
+async function clearState(){try{const db=await idb();
+  db.transaction("state","readwrite").objectStore("state").delete("last");}catch(e){}}
+
+function showSavedStatus(name,when){
+  const el=document.getElementById("fileStatus");
+  el.innerHTML=`${esc(name)} · saved on this device ${new Date(when).toLocaleDateString()} &nbsp;<a href="#" id="clearSaved" style="color:inherit">✕ clear</a>`;
+  el.querySelector("#clearSaved").onclick=e=>{e.preventDefault();clearState();
+    DATA=DEMO;focusAthlete=null;posFilter=null;
+    document.getElementById("demoBanner").style.display="";
+    setStatus("Saved data cleared — demo data shown");render();};
+}
 
 document.getElementById("importBtn").onclick=()=>document.getElementById("fileInput").click();
 document.getElementById("fileInput").onchange=e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); e.target.value=""; };
@@ -886,6 +910,40 @@ document.addEventListener("drop",e=>{e.preventDefault();dragDepth=0;document.bod
   const f=e.dataTransfer.files[0]; if(f) loadFile(f);});
 
 render();
+
+/* ---- LIVE DATA AUTO-LOAD ----
+   On launch, fetch the master Excel file that lives in this same GitHub repo.
+   Freshest data wins; falls back to device memory when offline; demo data last.
+   To update everyone's data: upload a new TAMU_Performance_Data.xlsx to the repo. */
+const DATA_URL="TAMU_Performance_Data.xlsx";
+async function fetchLiveData(){
+  if(!location.protocol.startsWith("http")) return false; // opened as a local file: skip
+  try{
+    const res=await fetch(DATA_URL+"?t="+Date.now(),{cache:"no-store"});
+    if(!res.ok) return false;
+    const wb=XLSX.read(await res.arrayBuffer(),{type:"array",cellDates:true});
+    const {data,errors,count}=parseWorkbook(wb);
+    if(!data.roster.length) return false;
+    DATA=data; focusAthlete=null;
+    document.getElementById("demoBanner").style.display="none";
+    const mod=res.headers.get("last-modified");
+    setStatus(`Live team data · ${count} rows`+(mod? ` · updated ${new Date(mod).toLocaleDateString()}`:"")
+      +(errors.length? ` · missing tabs: ${errors.join(", ")}`:""));
+    saveState({data,name:"Live team data",when:Date.now()});
+    render();
+    return true;
+  }catch(e){ return false; }
+}
+
+(async()=>{ if(await fetchLiveData()) return; const s=await loadState(); restoreSaved(s); })();
+function restoreSaved(s){
+  if(s && s.data && s.data.roster && s.data.roster.length){
+    DATA=s.data; focusAthlete=null;
+    document.getElementById("demoBanner").style.display="none";
+    showSavedStatus(s.name||"imported file", s.when||Date.now());
+    render();
+  }
+}
 </script>
 <script>
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
